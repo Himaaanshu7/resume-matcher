@@ -25,13 +25,9 @@ st.caption("100% local · free · powered by sentence-transformers + Ollama")
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.header("Settings")
-    llm_model = st.selectbox(
-        "Local LLM model (Ollama)",
-        ["mistral", "llama3", "gemma", "phi3", "tinyllama"],
-        index=0,
-    )
     top_n_keywords = st.slider("Missing keywords to show", 5, 20, 10)
     show_all_bullets = st.checkbox("Show all bullet scores", value=False)
+    st.info("AI features powered by **flan-t5-base** (local, no API key needed)")
 
 # ── Input columns ─────────────────────────────────────────────────────────────
 col1, col2 = st.columns(2)
@@ -155,7 +151,7 @@ if analyze:
                     st.markdown(f"**Original:** {b}")
                     if st.button("Rewrite with LLM", key=f"rw_btn_{idx}"):
                         with st.spinner("Rewriting..."):
-                            result = rewrite_bullet(b, jd_text, model=llm_model)
+                            result = rewrite_bullet(b, jd_text)
                         st.session_state.rewrites[bullet_key] = result
 
                     # Show result persistently if it exists in session state
@@ -168,7 +164,12 @@ if analyze:
     st.divider()
     st.subheader("AI Coach Feedback")
 
+    if "ai_feedback" not in st.session_state:
+        st.session_state.ai_feedback = ""
+
     if st.button("Generate AI Feedback", type="secondary"):
-        with st.spinner(f"Asking {llm_model} locally..."):
-            feedback = get_feedback(resume_text, jd_text, missing_kw, model=llm_model)
-        st.text_area("Feedback", value=feedback, height=250)
+        with st.spinner("Running flan-t5-base locally... (first run downloads ~250MB)"):
+            st.session_state.ai_feedback = get_feedback(resume_text, jd_text, missing_kw)
+
+    if st.session_state.ai_feedback:
+        st.text_area("Feedback", value=st.session_state.ai_feedback, height=250)

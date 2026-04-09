@@ -1,81 +1,76 @@
 """
 llm_feedback.py
-Generates AI feedback using a local Ollama model (e.g. mistral, llama3, gemma).
-Ollama must be running locally: https://ollama.com/download
+Generates AI feedback using google/flan-t5-base locally via HuggingFace transformers.
+No API key, no Ollama needed — model downloads once (~250MB) and is cached.
 """
 
-import ollama
+from transformers import pipeline
+import torch
+
+_pipe = None
 
 
-DEFAULT_MODEL = "mistral"  # swap to "llama3" or "gemma" if preferred
-
-
-def _prompt(resume_text: str, jd_text: str, missing_keywords: list[str]) -> str:
-    kw_str = ", ".join(missing_keywords) if missing_keywords else "none identified"
-    return f"""You are a professional resume coach. A candidate is applying for a job.
-
---- JOB DESCRIPTION ---
-{jd_text[:2000]}
-
---- RESUME ---
-{resume_text[:2000]}
-
---- MISSING KEYWORDS ---
-{kw_str}
-
-Your task:
-1. In 2-3 sentences, explain how well the resume matches the job description.
-2. List 3 specific resume bullets the candidate should ADD or REWRITE to better match the JD.
-3. List 2 skills or experiences from the JD that are completely absent from the resume.
-
-Be concise, actionable, and direct. Use plain text, no markdown headers."""
+def _get_pipeline():
+    global _pipe
+    if _pipe is None:
+        device = 0 if torch.cuda.is_available() else -1
+        _pipe = pipeline(
+            "text2text-generation",
+            model="google/flan-t5-base",
+            device=device,
+            max_new_tokens=256,
+        )
+    return _pipe
 
 
 def get_feedback(
     resume_text: str,
     jd_text: str,
     missing_keywords: list[str],
-    model: str = DEFAULT_MODEL,
+    model: str = None,  # kept for API compatibility, unused
 ) -> str:
     """
-    Calls local Ollama LLM and returns string feedback.
-    Falls back to a static message if Ollama is not running.
+    Returns coaching feedback comparing the resume to the JD.
     """
+    kw_str = ", ".join(missing_keywords[:10]) if missing_keywords else "none"
+
+    prompt = f"""You are a resume coach. Given the job description and resume below, do three things:
+1. In 2 sentences say how well the resume matches the job.
+2. List 3 specific bullets the candidate should add or improve.
+3. List 2 skills from the job description missing from the resume.
+
+Job Description: {jd_text[:800]}
+
+Resume: {resume_text[:800]}
+
+Missing keywords: {kw_str}
+
+Feedback:"""
+
     try:
-        response = ollama.chat(
-            model=model,
-            messages=[{"role": "user", "content": _prompt(resume_text, jd_text, missing_keywords)}],
-        )
-        return response["message"]["content"].strip()
+        pipe = _get_pipeline()
+        result = pipe(prompt, max_new_tokens=256, do_sample=False)
+        return result[0]["generated_text"].strip()
     except Exception as e:
-        return (
-            f"[LLM unavailable: {e}]\n\n"
-            "To enable AI feedback, install Ollama (https://ollama.com) and run:\n"
-            f"  ollama pull {model}\n"
-            "  ollama serve"
-        )
+        return f"[Error generating feedback: {e}]"
 
 
-def rewrite_bullet(bullet: str, jd_text: str, model: str = DEFAULT_MODEL) -> str:
+def rewrite_bullet(bullet: str, jd_text: str, model: str = None) -> str:
     """
-    Takes a weak resume bullet and rewrites it to better match the JD.
+    Rewrites a weak resume bullet to better match the JD.
     """
-    prompt = f"""Rewrite this resume bullet to better match the job description below.
-Keep it under 20 words. Start with a strong action verb. Be specific and quantified if possible.
+    prompt = f"""Rewrite this resume bullet to better match the job description.
+Use a strong action verb. Be specific. Keep it under 20 words.
 
-Job Description (excerpt):
-{jd_text[:800]}
+Job description keywords: {jd_text[:400]}
 
-Original bullet:
-{bullet}
+Original bullet: {bullet}
 
 Rewritten bullet:"""
 
     try:
-        response = ollama.chat(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        return response["message"]["content"].strip()
+        pipe = _get_pipeline()
+        result = pipe(prompt, max_new_tokens=80, do_sample=False)
+        return result[0]["generated_text"].strip()
     except Exception as e:
-        return f"[LLM unavailable: {e}]"
+        return f"[Error rewriting bullet: {e}]"
