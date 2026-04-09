@@ -53,106 +53,133 @@ def score_bullets(bullets: list[str], jd_text: str) -> list[dict]:
 
 def top_missing_keywords(resume_text: str, jd_text: str, top_n: int = 10) -> list[str]:
     """
-    Advanced semantic keyword gap detection:
-    1. Extracts meaningful technical phrases (1–3 words) from the JD
-    2. Filters out jargon, soft-skill filler, and generic words
-    3. Uses sentence-transformers to check if the resume semantically covers each phrase
-    4. Returns phrases the resume genuinely lacks, ranked by JD frequency
+    Tech-focused keyword gap detection:
+    1. Scans JD for known technologies, tools, languages, frameworks, platforms
+    2. Checks each against the resume using exact + semantic matching
+    3. Returns only real tech skills that are genuinely missing
     """
     import re
 
-    # Broad jargon/filler blocklist — words that appear in JDs but carry no technical signal
-    JARGON = {
-        # generic soft skills & filler
-        "ability", "able", "across", "additionally", "agile", "analytical",
-        "and", "are", "as", "at", "be", "been", "being", "best", "between",
-        "both", "but", "by", "can", "candidate", "collaborative", "communication",
-        "company", "complex", "competitive", "cross", "culture", "deep",
-        "demonstrated", "desired", "detail", "develop", "drive", "driven",
-        "duties", "dynamic", "eager", "end", "ensure", "environment",
-        "equivalent", "excellent", "experience", "expertise", "fast",
-        "fit", "for", "from", "functional", "good", "great", "grow",
-        "growth", "hands", "have", "high", "highly", "ideal", "identify",
-        "implement", "in", "including", "individual", "initiative",
-        "innovation", "innovative", "into", "is", "it", "join", "key",
-        "knowledge", "large", "lead", "leading", "learn", "level", "like",
-        "looking", "make", "manage", "management", "may", "minimum",
-        "must", "new", "not", "of", "on", "opportunity", "or", "other",
-        "our", "out", "own", "passionate", "people", "plus", "proactive",
-        "problem", "problems", "proven", "provide", "quality", "related",
-        "relevant", "remote", "required", "requirements", "responsibilities",
-        "results", "role", "scale", "self", "skills", "solving", "strong",
-        "support", "take", "team", "teamwork", "that", "the", "their",
-        "they", "this", "time", "to", "together", "tools", "track",
-        "understanding", "up", "us", "use", "using", "various", "we",
-        "well", "will", "with", "work", "working", "years", "you", "your",
+    # ── Comprehensive tech taxonomy ───────────────────────────────────────────
+    TECH_VOCAB = {
+        # Languages
+        "python", "r", "java", "javascript", "typescript", "c", "c++", "c#",
+        "go", "golang", "rust", "swift", "kotlin", "scala", "ruby", "php",
+        "perl", "bash", "shell", "powershell", "matlab", "julia", "groovy",
+        "dart", "lua", "haskell", "elixir", "clojure", "f#", "vba", "cobol",
+        "fortran", "assembly", "solidity",
+
+        # Web frontend
+        "react", "angular", "vue", "vue.js", "react.js", "next.js", "nuxt.js",
+        "svelte", "html", "css", "sass", "scss", "tailwind", "bootstrap",
+        "webpack", "vite", "babel", "jquery", "redux", "graphql",
+
+        # Web backend
+        "node.js", "express", "django", "flask", "fastapi", "spring", "spring boot",
+        "rails", "ruby on rails", "laravel", "asp.net", ".net", "nestjs",
+        "fastify", "tornado", "aiohttp",
+
+        # Databases
+        "sql", "mysql", "postgresql", "postgres", "sqlite", "oracle", "sql server",
+        "mongodb", "cassandra", "redis", "elasticsearch", "dynamodb", "firestore",
+        "neo4j", "couchdb", "influxdb", "mariadb", "hbase", "snowflake",
+        "bigquery", "redshift", "clickhouse", "supabase",
+
+        # Cloud & DevOps
+        "aws", "azure", "gcp", "google cloud", "docker", "kubernetes", "k8s",
+        "terraform", "ansible", "jenkins", "github actions", "gitlab ci",
+        "circleci", "helm", "prometheus", "grafana", "datadog", "splunk",
+        "nginx", "apache", "linux", "unix", "ci/cd", "devops", "sre",
+        "cloudformation", "pulumi", "vagrant", "chef", "puppet",
+
+        # Data & ML
+        "pandas", "numpy", "scikit-learn", "sklearn", "tensorflow", "pytorch",
+        "keras", "xgboost", "lightgbm", "catboost", "huggingface", "transformers",
+        "opencv", "nltk", "spacy", "spark", "pyspark", "hadoop", "kafka",
+        "airflow", "dbt", "mlflow", "kubeflow", "sagemaker", "databricks",
+        "tableau", "power bi", "looker", "matplotlib", "seaborn", "plotly",
+        "jupyter", "dask", "ray", "langchain", "openai", "llm", "rag",
+
+        # APIs & protocols
+        "rest", "rest api", "graphql", "grpc", "soap", "websocket", "oauth",
+        "jwt", "openapi", "swagger",
+
+        # Mobile
+        "android", "ios", "react native", "flutter", "xamarin", "ionic",
+
+        # Testing
+        "pytest", "junit", "selenium", "cypress", "jest", "mocha",
+        "unit testing", "integration testing", "tdd", "bdd",
+
+        # Version control & tools
+        "git", "github", "gitlab", "bitbucket", "jira", "confluence",
+        "postman", "linux", "bash scripting",
+
+        # Architecture & concepts
+        "microservices", "serverless", "event-driven", "message queue",
+        "rabbitmq", "celery", "etl", "elt", "data pipeline", "data warehouse",
+        "machine learning", "deep learning", "nlp", "computer vision",
+        "reinforcement learning", "generative ai", "vector database",
+        "pinecone", "weaviate", "chromadb",
+
+        # Domains
+        "blockchain", "web3", "cybersecurity", "networking", "embedded systems",
     }
 
-    def is_technical(phrase: str) -> bool:
-        """Keep only phrases that look like real technical terms."""
-        p = phrase.lower().strip()
-        words = p.split()
-        # Drop if any word is pure jargon
-        if any(w in JARGON for w in words):
-            return False
-        # Drop pure numbers
-        if re.fullmatch(r"[\d\.\-]+", p):
-            return False
-        # Must have at least one word that's 3+ chars and not a number
-        has_substance = any(len(w) >= 3 and not w.isdigit() for w in words)
-        return has_substance
+    # Multi-word terms need special handling — build a lookup set
+    MULTI_WORD_TECH = {t for t in TECH_VOCAB if " " in t}
+    SINGLE_WORD_TECH = {t for t in TECH_VOCAB if " " not in t}
 
-    def extract_phrases(text: str) -> list[str]:
-        """Extract 1–3 word candidate phrases from text."""
-        # Normalise
-        text = re.sub(r"[^\w\s\+\#\.\-]", " ", text)
-        tokens = text.split()
-        phrases = []
-        for size in (1, 2, 3):
-            for i in range(len(tokens) - size + 1):
-                phrase = " ".join(tokens[i: i + size])
-                # Keep token-level technical markers (C++, Node.js, scikit-learn, etc.)
-                phrase = re.sub(r"\s+", " ", phrase).strip()
-                if is_technical(phrase):
-                    phrases.append(phrase.lower())
-        return phrases
+    def normalize(text: str) -> str:
+        return re.sub(r"\s+", " ", text.lower().strip())
 
-    # Build candidate set from JD, ranked by frequency
-    jd_phrases = extract_phrases(jd_text)
-    freq: dict[str, int] = {}
-    for p in jd_phrases:
-        freq[p] = freq.get(p, 0) + 1
+    def find_tech_in_text(text: str) -> set[str]:
+        """Find all known tech terms present in a block of text."""
+        text_lower = text.lower()
+        found = set()
+        # Single-word exact match (word boundary)
+        for term in SINGLE_WORD_TECH:
+            if re.search(rf"\b{re.escape(term)}\b", text_lower):
+                found.add(term)
+        # Multi-word exact match
+        for term in MULTI_WORD_TECH:
+            if term in text_lower:
+                found.add(term)
+        return found
 
-    # Keep only phrases that appear ≥2 times OR are multi-word (more specific)
-    candidates = [
-        p for p, f in sorted(freq.items(), key=lambda x: x[1], reverse=True)
-        if f >= 2 or len(p.split()) >= 2
-    ]
+    jd_tech = find_tech_in_text(jd_text)
+    resume_tech = find_tech_in_text(resume_text)
 
-    if not candidates:
+    # Exact missing: in JD but not in resume
+    exact_missing = jd_tech - resume_tech
+
+    if not exact_missing:
         return []
 
-    # Semantic check: encode candidates + resume sentences
+    # Semantic check: even if the exact term is missing, the resume might
+    # describe the same concept differently (e.g. "sklearn" vs "scikit-learn")
     model = _get_model()
-    resume_sentences = [s.strip() for s in re.split(r"[\n\.]+", resume_text) if len(s.strip()) > 15]
+    candidates = sorted(exact_missing)
+    resume_sentences = [s.strip() for s in re.split(r"[\n\.]+", resume_text) if len(s.strip()) > 10]
     if not resume_sentences:
         resume_sentences = [resume_text]
 
     candidate_embs = model.encode(candidates, convert_to_tensor=True, show_progress_bar=False)
     resume_embs = model.encode(resume_sentences, convert_to_tensor=True, show_progress_bar=False)
 
-    # For each candidate, find its max similarity to any resume sentence
-    sim_matrix = util.cos_sim(candidate_embs, resume_embs)  # [num_candidates x num_sentences]
+    sim_matrix = util.cos_sim(candidate_embs, resume_embs)
     max_sims = sim_matrix.max(dim=1).values.tolist()
 
-    # A candidate is "missing" if the resume doesn't semantically cover it
-    SEMANTIC_THRESHOLD = 0.40
-    missing = [
+    SEMANTIC_THRESHOLD = 0.55  # tighter threshold for known tech terms
+    truly_missing = [
         candidates[i]
         for i, sim in enumerate(max_sims)
         if sim < SEMANTIC_THRESHOLD
     ]
 
-    # Re-rank missing by JD frequency
-    missing_ranked = sorted(missing, key=lambda p: freq.get(p, 0), reverse=True)
-    return missing_ranked[:top_n]
+    # Rank by frequency in JD (most-mentioned = most important)
+    def jd_freq(term: str) -> int:
+        return len(re.findall(rf"\b{re.escape(term)}\b", jd_text.lower()))
+
+    truly_missing.sort(key=jd_freq, reverse=True)
+    return truly_missing[:top_n]
