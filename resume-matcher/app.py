@@ -144,12 +144,23 @@ if analyze:
         weak_bullets = [r["bullet"] for r in bullet_scores if r["score"] < 0.30][:3]
         if weak_bullets:
             st.subheader("Suggested Rewrites (Weak Bullets)")
-            for b in weak_bullets:
-                with st.expander(f"Original: {b[:80]}..."):
-                    if st.button("Rewrite with LLM", key=f"rw_{b[:20]}"):
+
+            # Initialise session state store for rewrites
+            if "rewrites" not in st.session_state:
+                st.session_state.rewrites = {}
+
+            for idx, b in enumerate(weak_bullets):
+                bullet_key = f"bullet_{idx}"
+                with st.expander(f"Weak bullet {idx + 1}: {b[:80]}{'...' if len(b) > 80 else ''}"):
+                    st.markdown(f"**Original:** {b}")
+                    if st.button("Rewrite with LLM", key=f"rw_btn_{idx}"):
                         with st.spinner("Rewriting..."):
-                            rewritten = rewrite_bullet(b, jd_text, model=llm_model)
-                        st.success(rewritten)
+                            result = rewrite_bullet(b, jd_text, model=llm_model)
+                        st.session_state.rewrites[bullet_key] = result
+
+                    # Show result persistently if it exists in session state
+                    if bullet_key in st.session_state.rewrites:
+                        st.success(f"**Rewritten:** {st.session_state.rewrites[bullet_key]}")
     else:
         st.info("No bullet points detected in resume.")
 
