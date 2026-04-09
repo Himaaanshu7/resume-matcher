@@ -25,16 +25,23 @@ with st.sidebar:
     show_all_bullets = st.checkbox("Show all bullet scores", value=False)
     st.divider()
     st.subheader("AI Features (Groq)")
-    groq_api_key = st.text_input(
-        "Groq API Key",
-        type="password",
-        placeholder="gsk_...",
-        help="Free key at https://console.groq.com — no credit card needed",
-    )
-    if not groq_api_key:
-        st.warning("Add a free Groq API key to enable AI features.")
+
+    # Try hosted secret first, fall back to user-supplied key
+    hosted_key = st.secrets.get("GROQ_API_KEY", "") if hasattr(st, "secrets") else ""
+    if hosted_key:
+        groq_api_key = hosted_key
+        st.success("AI features enabled.")
     else:
-        st.success("API key set — AI features enabled.")
+        groq_api_key = st.text_input(
+            "Groq API Key",
+            type="password",
+            placeholder="gsk_...",
+            help="Free key at https://console.groq.com — no credit card needed",
+        )
+        if not groq_api_key:
+            st.warning("Add a free Groq API key to enable AI features.")
+        else:
+            st.success("API key set — AI features enabled.")
 
 # ── Initialise session state ──────────────────────────────────────────────────
 for key in ["score", "bullet_scores", "missing_kw", "resume_text", "jd_text",

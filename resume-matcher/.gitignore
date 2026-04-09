@@ -19,6 +19,7 @@ env/
 # Streamlit
 .streamlit/secrets.toml
 streamlit.log
+*.log
 
 # Sentence-transformers / HuggingFace cache
 .cache/
