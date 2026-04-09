@@ -20,14 +20,26 @@ st.set_page_config(
 )
 
 st.title("AI Resume & Job Description Matcher")
-st.caption("100% local · free · powered by sentence-transformers + Ollama")
+st.caption("Powered by sentence-transformers + Groq (free LLM API)")
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.header("Settings")
     top_n_keywords = st.slider("Missing keywords to show", 5, 20, 10)
     show_all_bullets = st.checkbox("Show all bullet scores", value=False)
-    st.info("AI features powered by **flan-t5-base** (local, no API key needed)")
+
+    st.divider()
+    st.subheader("AI Features (Groq)")
+    groq_api_key = st.text_input(
+        "Groq API Key",
+        type="password",
+        placeholder="gsk_...",
+        help="Free key at https://console.groq.com — no credit card needed",
+    )
+    if not groq_api_key:
+        st.warning("Add a free Groq API key to enable AI Feedback and Bullet Rewrite.")
+    else:
+        st.success("API key set — AI features enabled.")
 
 # ── Input columns ─────────────────────────────────────────────────────────────
 col1, col2 = st.columns(2)
@@ -61,6 +73,10 @@ if analyze:
         bullets = extract_bullets(resume_text)
         bullet_scores = score_bullets(bullets, jd_text)
         missing_kw = top_missing_keywords(resume_text, jd_text, top_n=top_n_keywords)
+
+    # Reset AI results when re-analyzing
+    st.session_state.ai_feedback = ""
+    st.session_state.rewrites = {}
 
     # ── Score gauge ───────────────────────────────────────────────────────────
     st.divider()
@@ -141,7 +157,6 @@ if analyze:
         if weak_bullets:
             st.subheader("Suggested Rewrites (Weak Bullets)")
 
-            # Initialise session state store for rewrites
             if "rewrites" not in st.session_state:
                 st.session_state.rewrites = {}
 
@@ -149,12 +164,11 @@ if analyze:
                 bullet_key = f"bullet_{idx}"
                 with st.expander(f"Weak bullet {idx + 1}: {b[:80]}{'...' if len(b) > 80 else ''}"):
                     st.markdown(f"**Original:** {b}")
-                    if st.button("Rewrite with LLM", key=f"rw_btn_{idx}"):
+                    if st.button("Rewrite with LLM", key=f"rw_btn_{idx}", disabled=not groq_api_key):
                         with st.spinner("Rewriting..."):
-                            result = rewrite_bullet(b, jd_text)
+                            result = rewrite_bullet(b, jd_text, api_key=groq_api_key)
                         st.session_state.rewrites[bullet_key] = result
 
-                    # Show result persistently if it exists in session state
                     if bullet_key in st.session_state.rewrites:
                         st.success(f"**Rewritten:** {st.session_state.rewrites[bullet_key]}")
     else:
@@ -167,9 +181,11 @@ if analyze:
     if "ai_feedback" not in st.session_state:
         st.session_state.ai_feedback = ""
 
-    if st.button("Generate AI Feedback", type="secondary"):
-        with st.spinner("Running flan-t5-base locally... (first run downloads ~250MB)"):
-            st.session_state.ai_feedback = get_feedback(resume_text, jd_text, missing_kw)
+    if st.button("Generate AI Feedback", type="secondary", disabled=not groq_api_key):
+        with st.spinner("Asking Groq (llama3-8b)..."):
+            st.session_state.ai_feedback = get_feedback(
+                resume_text, jd_text, missing_kw, api_key=groq_api_key
+            )
 
     if st.session_state.ai_feedback:
         st.text_area("Feedback", value=st.session_state.ai_feedback, height=250)
