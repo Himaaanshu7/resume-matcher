@@ -33,5 +33,7 @@ Thumbs.db
 .idea/
 
 # Uploaded test files
+# Uploaded resume files (not documentation)
 *.pdf
 *.docx
+!Resume_Matcher_Documentation_v2.docx
