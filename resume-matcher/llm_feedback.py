@@ -15,7 +15,7 @@ def _client(api_key: str) -> Groq:
 def _chat(api_key: str, prompt: str, max_tokens: int = 400) -> str:
     client = _client(api_key)
     response = client.chat.completions.create(
-        model="llama3-8b-8192",
+        model="llama-3.1-8b-instant",
         messages=[{"role": "user", "content": prompt}],
         max_tokens=max_tokens,
         temperature=0.3,
